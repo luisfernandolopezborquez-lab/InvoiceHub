@@ -1,0 +1,610 @@
+﻿import React, { useState, useRef } from 'react';
+import { FileText, Plus, Trash2, Download, Settings, LogOut } from 'lucide-react';
+
+
+export default function InvoiceHub() {
+  const [user, setUser] = useState(null);
+  const [currentPage, setCurrentPage] = useState('dashboard');
+  const [invoices, setInvoices] = useState([]);
+  const [clients, setClients] = useState([]);
+  
+  // INVOICE FORM
+  const [editingInvoice, setEditingInvoice] = useState(null);
+  const [formData, setFormData] = useState({
+    invoiceNumber: '',
+    clientName: '',
+    clientEmail: '',
+    issueDate: new Date().toISOString().split('T')[0],
+    dueDate: '',
+    items: [{ description: '', quantity: 1, price: 0 }],
+    taxRate: 0,
+    discountPercentage: 0,
+    notes: ''
+  });
+
+
+  // SIMULACIÓN DE LOGIN
+  const handleLogin = (email) => {
+    setUser({ email, name: email.split('@')[0] });
+    setCurrentPage('dashboard');
+  };
+
+
+  const handleLogout = () => {
+    setUser(null);
+    setCurrentPage('login');
+    setInvoices([]);
+  };
+
+
+  const addInvoiceItem = () => {
+    setFormData({
+      ...formData,
+      items: [...formData.items, { description: '', quantity: 1, price: 0 }]
+    });
+  };
+
+
+  const removeInvoiceItem = (index) => {
+    const newItems = formData.items.filter((_, i) => i !== index);
+    setFormData({ ...formData, items: newItems });
+  };
+
+
+  const updateInvoiceItem = (index, field, value) => {
+    const newItems = [...formData.items];
+    newItems[index][field] = field === 'quantity' || field === 'price' ? parseFloat(value) : value;
+    setFormData({ ...formData, items: newItems });
+  };
+
+
+  const calculateTotals = () => {
+    const subtotal = formData.items.reduce((sum, item) => sum + (item.quantity * item.price), 0);
+    const discount = subtotal * (formData.discountPercentage / 100);
+    const afterDiscount = subtotal - discount;
+    const tax = afterDiscount * (formData.taxRate / 100);
+    const total = afterDiscount + tax;
+
+
+    return { subtotal, discount, afterDiscount, tax, total };
+  };
+
+
+  const createInvoice = () => {
+    if (!formData.clientName || !formData.invoiceNumber) {
+      alert('Completa cliente e invoice number');
+      return;
+    }
+
+
+    const newInvoice = {
+      id: Date.now(),
+      ...formData,
+      createdAt: new Date().toLocaleDateString('es-ES'),
+      totals: calculateTotals()
+    };
+
+
+    setInvoices([newInvoice, ...invoices]);
+    resetForm();
+    setCurrentPage('dashboard');
+  };
+
+
+  const deleteInvoice = (id) => {
+    setInvoices(invoices.filter(inv => inv.id !== id));
+  };
+
+
+  const resetForm = () => {
+    setFormData({
+      invoiceNumber: `INV-${Date.now()}`,
+      clientName: '',
+      clientEmail: '',
+      issueDate: new Date().toISOString().split('T')[0],
+      dueDate: '',
+      items: [{ description: '', quantity: 1, price: 0 }],
+      taxRate: 0,
+      discountPercentage: 0,
+      notes: ''
+    });
+    setEditingInvoice(null);
+  };
+
+
+  const downloadPDF = (invoice) => {
+    const totals = invoice.totals || calculateTotals();
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="UTF-8">
+        <title>Invoice ${invoice.invoiceNumber}</title>
+        <style>
+          body { font-family: Arial; margin: 40px; }
+          .header { text-align: center; margin-bottom: 40px; }
+          .logo { font-size: 2em; font-weight: bold; color: #667eea; }
+          table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+          th, td { border: 1px solid #ddd; padding: 12px; text-align: left; }
+          th { background: #667eea; color: white; }
+          .totals { float: right; width: 300px; }
+          .total-row { font-weight: bold; background: #f5f5f5; }
+          .grand-total { background: #667eea; color: white; font-weight: bold; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div class="logo">📄 InvoiceHub</div>
+          <h1>INVOICE</h1>
+          <p>${invoice.invoiceNumber}</p>
+        </div>
+
+
+        <div style="margin-bottom: 30px;">
+          <h3>Bill To:</h3>
+          <p><strong>${invoice.clientName}</strong></p>
+          <p>${invoice.clientEmail}</p>
+        </div>
+
+
+        <div style="margin-bottom: 30px;">
+          <p><strong>Issue Date:</strong> ${invoice.issueDate}</p>
+          <p><strong>Due Date:</strong> ${invoice.dueDate}</p>
+        </div>
+
+
+        <table>
+          <tr>
+            <th>Description</th>
+            <th>Quantity</th>
+            <th>Unit Price</th>
+            <th>Total</th>
+          </tr>
+          ${invoice.items.map(item => `
+            <tr>
+              <td>${item.description}</td>
+              <td>${item.quantity}</td>
+              <td>$${item.price.toFixed(2)}</td>
+              <td>$${(item.quantity * item.price).toFixed(2)}</td>
+            </tr>
+          `).join('')}
+        </table>
+
+
+        <div class="totals">
+          <div style="display: flex; justify-content: space-between; padding: 10px 0;">
+            <span>Subtotal:</span>
+            <span>$${totals.subtotal.toFixed(2)}</span>
+          </div>
+          ${invoice.discountPercentage > 0 ? `
+            <div style="display: flex; justify-content: space-between; padding: 10px 0;">
+              <span>Discount (${invoice.discountPercentage}%):</span>
+              <span>-$${totals.discount.toFixed(2)}</span>
+            </div>
+          ` : ''}
+          ${invoice.taxRate > 0 ? `
+            <div style="display: flex; justify-content: space-between; padding: 10px 0;">
+              <span>Tax (${invoice.taxRate}%):</span>
+              <span>$${totals.tax.toFixed(2)}</span>
+            </div>
+          ` : ''}
+          <div class="total-row" style="display: flex; justify-content: space-between; padding: 10px 0;">
+            <span>TOTAL:</span>
+            <span>$${totals.total.toFixed(2)}</span>
+          </div>
+        </div>
+
+
+        ${invoice.notes ? `<p><strong>Notes:</strong> ${invoice.notes}</p>` : ''}
+      </body>
+      </html>
+    `;
+
+
+    const blob = new Blob([html], { type: 'text/html' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${invoice.invoiceNumber}.html`;
+    link.click();
+  };
+
+
+  const totals = calculateTotals();
+
+
+  if (!user) {
+    return (
+      <div style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'Arial' }}>
+        <div style={{ background: 'white', padding: '60px', borderRadius: '10px', boxShadow: '0 10px 40px rgba(0,0,0,0.2)', textAlign: 'center', maxWidth: '500px' }}>
+          <h1 style={{ color: '#667eea', fontSize: '2.5em', marginBottom: '10px' }}>📄 InvoiceHub</h1>
+          <p style={{ color: '#666', marginBottom: '40px', fontSize: '1.1em' }}>Invoices profesionales en segundos</p>
+
+
+          <input
+            type="email"
+            placeholder="tu@email.com"
+            onKeyPress={(e) => {
+              if (e.key === 'Enter' && e.target.value) {
+                handleLogin(e.target.value);
+              }
+            }}
+            style={{
+              width: '100%',
+              padding: '12px',
+              marginBottom: '15px',
+              border: '2px solid #ddd',
+              borderRadius: '5px',
+              fontSize: '1em'
+            }}
+          />
+
+
+          <button
+            onClick={(e) => {
+              const email = e.target.previousSibling.value;
+              if (email) handleLogin(email);
+            }}
+            style={{
+              width: '100%',
+              padding: '12px',
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '5px',
+              fontSize: '1em',
+              fontWeight: 'bold',
+              cursor: 'pointer'
+            }}
+          >
+            Entrar →
+          </button>
+
+
+          <p style={{ color: '#999', marginTop: '20px', fontSize: '0.9em' }}>Demo: usa cualquier email</p>
+        </div>
+      </div>
+    );
+  }
+
+
+  return (
+    <div style={{ fontFamily: 'Arial', background: '#f5f7fb', minHeight: '100vh' }}>
+      {/* HEADER */}
+      <div style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', color: 'white', padding: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '1.5em', fontWeight: 'bold' }}>
+          <FileText size={32} /> InvoiceHub
+        </div>
+        <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+          <span>{user.name}</span>
+          <button
+            onClick={handleLogout}
+            style={{ background: 'rgba(255,255,255,0.2)', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '5px', cursor: 'pointer', display: 'flex', gap: '5px' }}
+          >
+            <LogOut size={18} /> Salir
+          </button>
+        </div>
+      </div>
+
+
+      {/* NAVBAR */}
+      <div style={{ background: 'white', padding: '15px 20px', borderBottom: '1px solid #ddd' }}>
+        <button
+          onClick={() => setCurrentPage('dashboard')}
+          style={{
+            background: currentPage === 'dashboard' ? '#667eea' : 'transparent',
+            color: currentPage === 'dashboard' ? 'white' : '#333',
+            padding: '8px 16px',
+            margin: '0 5px',
+            border: 'none',
+            borderRadius: '5px',
+            cursor: 'pointer',
+            fontWeight: 'bold'
+          }}
+        >
+          Dashboard
+        </button>
+        <button
+          onClick={() => { setCurrentPage('create'); resetForm(); }}
+          style={{
+            background: currentPage === 'create' ? '#667eea' : 'transparent',
+            color: currentPage === 'create' ? 'white' : '#333',
+            padding: '8px 16px',
+            margin: '0 5px',
+            border: 'none',
+            borderRadius: '5px',
+            cursor: 'pointer',
+            fontWeight: 'bold'
+          }}
+        >
+          + Crear Invoice
+        </button>
+      </div>
+
+
+      {/* MAIN CONTENT */}
+      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '40px 20px' }}>
+        {currentPage === 'dashboard' && (
+          <div>
+            <h1 style={{ marginBottom: '30px', color: '#1a1a1a' }}>Dashboard</h1>
+
+
+            {invoices.length === 0 ? (
+              <div style={{ background: 'white', padding: '60px', borderRadius: '10px', textAlign: 'center' }}>
+                <FileText size={64} style={{ color: '#ccc', margin: '0 auto 20px' }} />
+                <h2 style={{ color: '#999', marginBottom: '15px' }}>No tienes invoices aún</h2>
+                <button
+                  onClick={() => { setCurrentPage('create'); resetForm(); }}
+                  style={{
+                    background: '#667eea',
+                    color: 'white',
+                    padding: '12px 30px',
+                    border: 'none',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    fontSize: '1em',
+                    fontWeight: 'bold'
+                  }}
+                >
+                  Crear tu primer invoice
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: '20px' }}>
+                {invoices.map(invoice => (
+                  <div key={invoice.id} style={{ background: 'white', padding: '20px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
+                    <div>
+                      <h3 style={{ color: '#667eea', marginBottom: '5px' }}>{invoice.invoiceNumber}</h3>
+                      <p style={{ color: '#666', marginBottom: '5px' }}>{invoice.clientName}</p>
+                      <p style={{ color: '#999', fontSize: '0.9em' }}>Total: <strong>${invoice.totals.total.toFixed(2)}</strong></p>
+                    </div>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <button
+                        onClick={() => downloadPDF(invoice)}
+                        style={{
+                          background: '#51cf66',
+                          color: 'white',
+                          padding: '8px 16px',
+                          border: 'none',
+                          borderRadius: '5px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          gap: '5px',
+                          alignItems: 'center'
+                        }}
+                      >
+                        <Download size={16} /> Descargar
+                      </button>
+                      <button
+                        onClick={() => deleteInvoice(invoice.id)}
+                        style={{
+                          background: '#ff6b6b',
+                          color: 'white',
+                          padding: '8px 16px',
+                          border: 'none',
+                          borderRadius: '5px',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          gap: '5px',
+                          alignItems: 'center'
+                        }}
+                      >
+                        <Trash2 size={16} /> Eliminar
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+
+        {currentPage === 'create' && (
+          <div style={{ background: 'white', padding: '40px', borderRadius: '10px', maxWidth: '800px', margin: '0 auto' }}>
+            <h1 style={{ marginBottom: '30px', color: '#1a1a1a' }}>Crear Nuevo Invoice</h1>
+
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Invoice Number</label>
+              <input
+                type="text"
+                value={formData.invoiceNumber}
+                onChange={(e) => setFormData({ ...formData, invoiceNumber: e.target.value })}
+                style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px', fontSize: '1em' }}
+              />
+            </div>
+
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Nombre del Cliente</label>
+                <input
+                  type="text"
+                  value={formData.clientName}
+                  onChange={(e) => setFormData({ ...formData, clientName: e.target.value })}
+                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px', fontSize: '1em' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Email del Cliente</label>
+                <input
+                  type="email"
+                  value={formData.clientEmail}
+                  onChange={(e) => setFormData({ ...formData, clientEmail: e.target.value })}
+                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px', fontSize: '1em' }}
+                />
+              </div>
+            </div>
+
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Fecha de Emisión</label>
+                <input
+                  type="date"
+                  value={formData.issueDate}
+                  onChange={(e) => setFormData({ ...formData, issueDate: e.target.value })}
+                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px', fontSize: '1em' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Fecha de Vencimiento</label>
+                <input
+                  type="date"
+                  value={formData.dueDate}
+                  onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
+                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px', fontSize: '1em' }}
+                />
+              </div>
+            </div>
+
+
+            <h3 style={{ marginTop: '30px', marginBottom: '15px', color: '#1a1a1a' }}>Items</h3>
+            {formData.items.map((item, index) => (
+              <div key={index} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '10px', marginBottom: '15px', alignItems: 'end' }}>
+                <div>
+                  <input
+                    type="text"
+                    placeholder="Descripción"
+                    value={item.description}
+                    onChange={(e) => updateInvoiceItem(index, 'description', e.target.value)}
+                    style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px', fontSize: '1em' }}
+                  />
+                </div>
+                <div>
+                  <input
+                    type="number"
+                    placeholder="Cantidad"
+                    value={item.quantity}
+                    onChange={(e) => updateInvoiceItem(index, 'quantity', e.target.value)}
+                    style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px', fontSize: '1em' }}
+                  />
+                </div>
+                <div>
+                  <input
+                    type="number"
+                    placeholder="Precio"
+                    value={item.price}
+                    onChange={(e) => updateInvoiceItem(index, 'price', e.target.value)}
+                    step="0.01"
+                    style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px', fontSize: '1em' }}
+                  />
+                </div>
+                <button
+                  onClick={() => removeInvoiceItem(index)}
+                  style={{ background: '#ff6b6b', color: 'white', padding: '8px 12px', border: 'none', borderRadius: '5px', cursor: 'pointer' }}
+                >
+                  <Trash2 size={18} />
+                </button>
+              </div>
+            ))}
+
+
+            <button
+              onClick={addInvoiceItem}
+              style={{ background: '#667eea', color: 'white', padding: '10px 20px', border: 'none', borderRadius: '5px', cursor: 'pointer', marginBottom: '20px', display: 'flex', gap: '5px' }}
+            >
+              <Plus size={18} /> Agregar Item
+            </button>
+
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+              <div>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Impuesto (%)</label>
+                <input
+                  type="number"
+                  value={formData.taxRate}
+                  onChange={(e) => setFormData({ ...formData, taxRate: parseFloat(e.target.value) })}
+                  step="0.01"
+                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px', fontSize: '1em' }}
+                />
+              </div>
+              <div>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Descuento (%)</label>
+                <input
+                  type="number"
+                  value={formData.discountPercentage}
+                  onChange={(e) => setFormData({ ...formData, discountPercentage: parseFloat(e.target.value) })}
+                  step="0.01"
+                  style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px', fontSize: '1em' }}
+                />
+              </div>
+            </div>
+
+
+            <div style={{ background: '#f5f5f5', padding: '20px', borderRadius: '5px', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                <span>Subtotal:</span>
+                <strong>${totals.subtotal.toFixed(2)}</strong>
+              </div>
+              {formData.discountPercentage > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                  <span>Descuento:</span>
+                  <strong>-${totals.discount.toFixed(2)}</strong>
+                </div>
+              )}
+              {formData.taxRate > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                  <span>Impuesto:</span>
+                  <strong>${totals.tax.toFixed(2)}</strong>
+                </div>
+              )}
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1.2em', fontWeight: 'bold', paddingTop: '10px', borderTop: '1px solid #ddd' }}>
+                <span>TOTAL:</span>
+                <span style={{ color: '#667eea' }}>${totals.total.toFixed(2)}</span>
+              </div>
+            </div>
+
+
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Notas</label>
+              <textarea
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                placeholder="Términos y condiciones, gracias por tu negocio, etc."
+                style={{ width: '100%', padding: '10px', border: '1px solid #ddd', borderRadius: '5px', fontSize: '1em', minHeight: '100px' }}
+              />
+            </div>
+
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={createInvoice}
+                style={{
+                  flex: 1,
+                  background: '#667eea',
+                  color: 'white',
+                  padding: '12px',
+                  border: 'none',
+                  borderRadius: '5px',
+                  cursor: 'pointer',
+                  fontSize: '1em',
+                  fontWeight: 'bold'
+                }}
+              >
+                Crear Invoice
+              </button>
+              <button
+                onClick={() => setCurrentPage('dashboard')}
+                style={{
+                  flex: 1,
+                  background: '#ddd',
+                  color: '#333',
+                  padding: '12px',
+                  border: 'none',
+                  borderRadius: '5px',
+                  cursor: 'pointer',
+                  fontSize: '1em',
+                  fontWeight: 'bold'
+                }}
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
